@@ -1,2 +1,6 @@
+.git/
 __pycache__/
-db
+data/db
+Dockerfile
+.gitignore
+.dockerignore

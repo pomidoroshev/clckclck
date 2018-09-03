@@ -1,14 +1,7 @@
 """
 Сокращатель ссылок
-
-API:
- - GET /?url=https://www.domain.com/foo/bar?spam=eggs
-   http://d.ssl2.ru/iOkfe
-
- - GET /iOkfe
-   HTTP 301 https://www.domain.com/foo/bar?spam=eggs
-
 """
+from concurrent.futures import ThreadPoolExecutor
 import os
 import random
 import shelve
@@ -19,42 +12,40 @@ from sanic.exceptions import abort
 from sanic.response import redirect, text
 
 
+SITENAME = os.getenv('SITENAME', 'http://127.0.0.1:8080')
 MAX_LENGTH = 5
-DB_FILENAME = 'db'
+BASE_DIR = os.path.abspath('.')
+DB_PATH = os.path.join(BASE_DIR, 'data', 'db')
 
 app = Sanic()
 
 
-def gen_short():
+def generate_slug():
     return ''.join(random.choices(string.ascii_letters, k=MAX_LENGTH))
 
 
 def add_url(url, *, db):
-    short = gen_short()
-    while short in db:
-        short = gen_short()
+    slug = generate_slug()
+    while slug in db:
+        slug = generate_slug()
 
-    db[short] = url
-    return short
-
-
-def get_url(short, *, db):
-    return db.get(short)
+    db[slug] = url
+    return slug
 
 
 @app.route('/')
 async def add(request):
-    short = ''
+    if not request.args.get('url'):
+        abort(400, "Missing 'url' parameter")
 
-    if request.args.get('url'):
-        short = add_url(request.args['url'][0], db=request.app.db)
+    fut = request.app.executor.submit(add_url, request.args['url'][0], db=request.app.db)
+    slug = fut.result()
+    return text(f'{SITENAME}/{slug}')
 
-    return text(short)
 
-
-@app.route('/<short>')
-async def get(request, short):
-    url = get_url(short, db=request.app.db)
+@app.route('/<slug>')
+async def get(request, slug):
+    url = request.app.db.get(slug)
     if not url:
         abort(404, 'Url not found')
 
@@ -63,7 +54,10 @@ async def get(request, short):
 
 @app.listener('before_server_start')
 async def setup_db(app, loop):
-    app.db = shelve.open(DB_FILENAME)
+    app.db = shelve.open(DB_PATH)
+
+    # Многопоточный executor для неблокирующей записи в shelve
+    app.executor = ThreadPoolExecutor()
 
 
 if __name__ == '__main__':

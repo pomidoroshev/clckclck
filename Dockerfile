@@ -4,10 +4,12 @@ RUN apk add --no-cache build-base
 
 RUN mkdir /app
 
-ADD . /app
-
 WORKDIR /app
+
+ADD requirements.txt /app
 
 RUN pip install -r requirements.txt
 
-CMD ["python" "main.py"]
+ADD . /app
+
+CMD ["python", "main.py"]
